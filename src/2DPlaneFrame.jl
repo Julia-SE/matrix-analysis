@@ -8,14 +8,13 @@ struct Support{T <: Tuple{Vararg{Int}}}
     Releases::T
 end
 
-
-
 struct Material
     E::Float64
 end
 
 struct Section
     I::Float64
+    A::Float64
 end
 
 struct Element
@@ -59,23 +58,6 @@ struct SurfaceShearLoad
     distance2::Float64
 end
 
-
-
-function gK(Xb, Yb, Xe, Ye, E, A)
-  δx = Xe - Xb
-  δy = Ye - Yb
-  L = sqrt(δx^2 + δy^2)
-  _cos = δx/L
-  _sin = δy/L
-  _cos² = _cos * _cos
-  _sin² = _sin * _sin
-  _cos_sin = _cos * _sin
-  (A*E/L)*[_cos² _cos_sin -_cos² -_cos_sin
-   _cos_sin _sin² -_cos_sin -_sin²
-   -_cos² -_cos_sin _cos² _cos_sin
-   -_cos_sin -_sin² _cos_sin _sin²]
-end
-
 function T(Xb, Yb, Xe, Ye)
     δx = Xe - Xb
     δy = Ye - Yb
@@ -89,17 +71,19 @@ function T(Xb, Yb, Xe, Ye)
      0 0 -_sin _cos]
 end
 
-function k(Xb, Yb, Xe, Ye, E, I)
+function k(Xb, Yb, Xe, Ye, A, E, I)
     δx = Xe - Xb
     δy = Ye - Yb
     L = sqrt(δx^2 + δy^2)
 
-    (E*I/L^3)*[12. 6L -12 6L
-               6L 4L^2 -6L 2L^2
-               -12 -6L 12 -6L
-               6L 2L^2 -6L 4L^2]
+    (E*I/L^3)*
+    [A*L^2/I 0 0 -A*L^2/I 0 0
+     0 12 6L 0 -12 6L
+     0 6L 4L^2 0 -6L 2L^2
+     -A*L^2/I 0 0 A*L^2/I 0 0
+     0 -12 -6L 0 12 -6L
+     0 6L 2L^2 0 -6L 4L^2]
 end
-
 
 function Qf(Xb, Yb, Xe, Ye, cLoad::CLoad)
     δx = Xe - Xb
@@ -116,9 +100,6 @@ function Qf(Xb, Yb, Xe, Ye, cLoad::CLoad)
 
     [FSb; FMb; FSe; FMe]
 end
-
-
-
 
 function Qf(Xb, Yb, Xe, Ye, dLoad::DLoad)
     δx = Xe - Xb
@@ -193,14 +174,14 @@ function nsc(COORD, MSUP, NCJT)
         supportIndexes = [s.Node for s in MSUP]
         if in(nodeIndex, supportIndexes)                        #   if this node is a support then...
             supportIndex = findfirst(supportIndexes, nodeIndex) #     get the support Index for this node
-            if MSUP[supportIndex].Releases[1] == 1             #     if node is restrained in the X direction...
+            if MSUP[supportIndex].XRelease == 1             #     if node is restrained in the X direction...
                  NSC[2*nodeIndex - 1] = restraintCoord           #       NSC X value for this node is the next restraint coordinate
                 restraintCoord += 1
             else                                                #     otherwise, this node is free in the X direction
                  NSC[2*nodeIndex - 1] = freeCoord         #       NSC X value for this node is the next free coordinate
                 freeCoord += 1
             end
-            if MSUP[supportIndex].Releases[2] == 1             #     if node is restrained in the Y direction...
+            if MSUP[supportIndex].YRelease == 1             #     if node is restrained in the Y direction...
                 NSC[2*nodeIndex] = restraintCoord         #       NSC Y value for this node is the next restraint coordinate
                 restraintCoord += 1
             else                                                #     otherwise, this node is free in the Y direction
@@ -236,8 +217,9 @@ function gs(COORD, MSUP, MPRP, EM, CP, NSC, NCJT)
         Xe = COORD[nodeEnd].X
         Ye = COORD[nodeEnd].Y
         E = EM[memberInfo.Material].E
+        A = EM[memberInfo.Material].A
         I = CP[memberInfo.Section].I
-        GK = k(Xb, Yb, Xe, Ye, E, I)
+        GK = k(Xb, Yb, Xe, Ye, A, E, I)
 
         NSC_Indecies =
         vcat([NSC[(nodeBegin - 1)*NCJT + x] for x in 1:NCJT],
@@ -386,7 +368,7 @@ end
 
 
 function run_analysis(COORD, MSUP, EM, CP, MPRP, memberLoads, nodeLoads)
-    NCJT = 2
+    NCJT = length(MSUP[1].Releases)
     NSC = nsc(COORD, MSUP, NCJT)
     GS = gs(COORD, MSUP, MPRP, EM, CP, NSC, NCJT)
     P, Pf = p_pf(COORD, MSUP, NSC, memberLoads, nodeLoads, NCJT)

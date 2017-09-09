@@ -1,14 +1,14 @@
-include("C:\\Users\\darien.shannon\\Documents\\Code\\Julia\\JuliaSE\\src\\2DBeam.jl")
+include("C:\\Users\\darien.shannon\\Documents\\Code\\Julia\\Julia-SE\\matrix-analysis\\src\\2DBeam.jl")
 
 COORD = [Node(0, 0)
          Node(6, 0)
          Node(10, 0)
          Node(20, 0)]
 
-MSUP = [Support(1, 1, 1)
-        Support(2, 0, 0)
-        Support(3, 1, 0)
-        Support(4, 1, 0)]
+MSUP = [Support(1, (1, 1))
+        Support(2, (0, 0))
+        Support(3, (1, 0))
+        Support(4, (1, 0))]
 
 EM = Dict( 1 => Material(28e6))
 
