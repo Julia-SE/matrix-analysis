@@ -10,6 +10,7 @@ end
 
 
 
+
 struct Material
     E::Float64
 end
@@ -35,9 +36,11 @@ struct MLoad
     distance::Float64
 end
 
-struct NLoad{T}
+struct NLoad{T <: Tuple{Vararg{AbstractFloat}}}
     loads::T
 end
+
+NLoad(loads::Vararg{AbstractFloat}) = NLoad(loads)
 
 
 struct DLoad

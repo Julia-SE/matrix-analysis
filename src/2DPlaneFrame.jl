@@ -34,9 +34,26 @@ struct MLoad
     distance::Float64
 end
 
-struct NLoad{T}
+struct NLoad{T <: Tuple{Vararg{AbstractFloat}}}
     loads::T
 end
+
+NLoad(loads::Vararg{AbstractFloat} = NLoad(loads)
+
+#=
+function test(t::NLoad{NTuple{N, Float64}} where N)
+    println(t.loads)
+end
+
+function test(t::NLoad{NTuple{3, Float64}} where N)
+    println(3)
+end
+
+=#
+
+
+
+
 
 
 struct DLoad

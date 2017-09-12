@@ -23,8 +23,8 @@ MPRP = [Element(1, 2, 1, 2)
 memberLoads = [(1, DLoad(30, 0, 0, 6))
                (3, CLoad(150, 5))]
 
-nodeLoads = [(2, NLoad((-200, 0)))
-             (3, NLoad((0, -90)))]
+nodeLoads = [(2, NLoad(-200., 0.))
+             (3, NLoad(0., -90.))]
 
 
 
