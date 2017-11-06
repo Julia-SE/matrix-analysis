@@ -3,10 +3,9 @@ struct Node
     Y::Float64
 end
 
-struct Support
+struct Support{T <: Tuple{Vararg{Int}}}
     Node::Int
-    XRelease::Int
-    YRelease::Int
+    Releases::T
 end
 
 struct Material
@@ -25,11 +24,11 @@ struct Element
 end
 
 
-struct Load
-    Node::Int
-    Px::Float64
-    Py::Float64
+struct NLoad{T <: Tuple{Vararg{AbstractFloat}}}
+    loads::T
 end
+
+NLoad(loads::Vararg{AbstractFloat}) = NLoad(loads)
 
 function gK(Xb, Yb, Xe, Ye, E, A)
   δx = Xe - Xb
@@ -78,9 +77,9 @@ COORD = [Node(0, 0)
          Node(288, 216)
          Node(576, 216)]
 
-MSUP = [Support(1, 1, 1)
-            Support(3, 0, 1)
-            Support(4, 0, 1)]
+MSUP = [Support(1, (1, 1))
+        Support(3, (0, 1))
+        Support(4, (0, 1))]
 
 EM = Dict( 1 => Material(29000),
            2 => Material(10000))
@@ -101,9 +100,9 @@ MPRP = [Element(1, 2, 1, 1)
         Element(3, 5, 1, 2)
         Element(4, 6, 2, 3)]
 
-loads = Dict(2 => (0.0, -75.),
-             5 => (25., 0.),
-             6 => (0., -60.))
+loads = [(2, NLoad(0.0, -75.))
+         (5, NLoad(25., 0.))
+         (6, NLoad(0., -60.))]
 
 #=
 COORD = [Node(12*12, 16*12)
@@ -156,7 +155,7 @@ function nsc(COORD, MSUP, NCJT)
     NJ = size(COORD, 1)
 
     #Determine Number of Restraints (NR)
-    NR = sum(map(s -> s.XRelease + s.YRelease, MSUP))
+    NR = sum(map(s -> sum(s.Releases), MSUP))
 
     numDOF = NJ * NCJT - NR
 
@@ -168,15 +167,15 @@ function nsc(COORD, MSUP, NCJT)
         supportIndexes = [s.Node for s in MSUP]
         if in(nodeIndex, supportIndexes)                        #   if this node is a support then...
             supportIndex = findfirst(supportIndexes, nodeIndex) #     get the support Index for this node
-            if MSUP[supportIndex].XRelease == 1             #     if node is restrained in the X direction...
-                 NSC[2*nodeIndex - 1] = restraintCoord           #       NSC X value for this node is the next restraint coordinate
+            if MSUP[supportIndex].Releases[1] == 1                 #     if node is restrained in the X direction...
+                 NSC[2*nodeIndex - 1] = restraintCoord          #       NSC X value for this node is the next restraint coordinate
                 restraintCoord += 1
             else                                                #     otherwise, this node is free in the X direction
-                 NSC[2*nodeIndex - 1] = freeCoord         #       NSC X value for this node is the next free coordinate
+                 NSC[2*nodeIndex - 1] = freeCoord               #       NSC X value for this node is the next free coordinate
                 freeCoord += 1
             end
-            if MSUP[supportIndex].YRelease == 1             #     if node is restrained in the Y direction...
-                NSC[2*nodeIndex] = restraintCoord         #       NSC Y value for this node is the next restraint coordinate
+            if MSUP[supportIndex].Releases[2] == 1                 #     if node is restrained in the Y direction...
+                NSC[2*nodeIndex] = restraintCoord               #       NSC Y value for this node is the next restraint coordinate
                 restraintCoord += 1
             else                                                #     otherwise, this node is free in the Y direction
                  NSC[2*nodeIndex] = freeCoord             #       NSC Y value for this node is the next free coordinate
@@ -199,7 +198,7 @@ function gs(COORD, MSUP, MPRP, EM, CP, NSC, NCJT)
     NJ = size(COORD, 1)
 
     #Determine Number of Restraints (NR)
-    NR = sum(map(s -> s.XRelease + s.YRelease, MSUP))
+    NR = sum(map(s -> sum(s.Releases), MSUP))
 
     numDOF = NJ * NCJT - NR
 
@@ -239,11 +238,10 @@ function gs(COORD, MSUP, MPRP, EM, CP, NSC, NCJT)
     end
     S
 end
-#S = gs(COORD, MSUP, MPRP, EM, CP, NSC, NCJT)
 
 function p(COORD, MSUP, NSC, loads, NCJT)
     NJ = size(COORD, 1)
-    NR = sum(map(s -> s.XRelease + s.YRelease, MSUP))
+    NR = sum(map(s -> sum(s.Releases), MSUP))
     numDOF = NJ * NCJT - NR
     NJL = length(loads)
 
@@ -252,30 +250,30 @@ function p(COORD, MSUP, NSC, loads, NCJT)
     dofIndecies = find(x -> x <= numDOF, NSC)
 
     for i in 1:size(dofIndecies,1)
+
         dofIndex = dofIndecies[i]
         remainder = dofIndex%NCJT
         dofOfNode = (remainder == 0 ? NCJT : remainder)
         node = Int(1 + (dofIndex - dofOfNode)/NCJT)
-        if haskey(loads, node)
-            P[i] = loads[node][dofOfNode]
-        else
-            P[i] = 0.0
-        end
+
+
+        _nodeLoads =  map(load -> load[2], filter(load -> load[1] == node, loads))
+
+         for load in _nodeLoads
+            P[i] = P[i] + load.loads[dofOfNode]
+         end
     end
     P
 end
-
-#P = p(COORD, MSUP, NSC, loads, NCJT)
 
 function get_d(S, P)
     inv(S)*P
 end
 
-#d = get_d(S, P)
 
-function forces_reactions(COORD, NSC, MSUP, EM, CP, MPRP, d, NCJT)
+function forces_reactions_displacements(COORD, NSC, MSUP, EM, CP, MPRP, d, NCJT)
     NJ = size(COORD, 1)
-    NR = sum(map(s -> s.XRelease + s.YRelease, MSUP))
+    NR = sum(map(s -> sum(s.Releases), MSUP))
     numDOF = NJ * NCJT - NR
 
     R = zeros(NR)
@@ -311,7 +309,7 @@ function forces_reactions(COORD, NSC, MSUP, EM, CP, MPRP, d, NCJT)
         BK = k(Xb, Yb, Xe, Ye, E, A)
 
         Q = BK * U
-        forces[member] = Q[1]
+        forces[member] = Q[3]
 
         F = _T'Q
 
@@ -328,10 +326,8 @@ function forces_reactions(COORD, NSC, MSUP, EM, CP, MPRP, d, NCJT)
             end
         end
     end
-    forces, R
+    forces, R, d
 end
-
-#forces, reactions = forces_reactions(COORD, MSUP, EM, CP, MPRP, d, NCJT)
 
 function run_analysis(COORD, MSUP, EM, CP, MPRP, loads)
     NCJT = 2
@@ -339,29 +335,5 @@ function run_analysis(COORD, MSUP, EM, CP, MPRP, loads)
     GS = gs(COORD, MSUP, MPRP, EM, CP, NSC, NCJT)
     P = p(COORD, MSUP, NSC, loads, NCJT)
     d = get_d(GS, P)
-    forces, reactions = forces_reactions(COORD, NSC, MSUP, EM, CP, MPRP, d, NCJT)
+    forces, reactions, displacment = forces_reactions_displacements(COORD, NSC, MSUP, EM, CP, MPRP, d, NCJT)
 end
-
-
-
-
-forces, reactions = run_analysis(COORD, MSUP, EM, CP, MPRP, loads)
-println(forces)
-println(reactions)
-
-#=
-NCJT = 2
-NSC = nsc(COORD, MSUP, 2)
-GS = gs(COORD, MSUP, MPRP, EM, CP, NSC, NCJT)
-P = p(COORD, MSUP, NSC, loads, NCJT)
-d = get_d(GS, P)
-
-
-
-@time [nsc(COORD, MSUP, 2) for i in 1:10000]
-@time [gs(COORD, MSUP, MPRP, EM, CP, NSC, NCJT) for i in 1:10000]
-@time [p(COORD, MSUP, NSC, loads, NCJT) for i in 1:10000]
-@time [get_d(GS, P) for i in 1:10000]
-@time [forces_reactions(COORD, NSC, MSUP, EM, CP, MPRP, d, NCJT) for i in 1:10000]
-@time [run_analysis(COORD, MSUP, EM, CP, MPRP, loads) for i in 1:10000]
-=#

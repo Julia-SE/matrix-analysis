@@ -1,3 +1,5 @@
+abstract Load
+
 struct Node
     X::Float64
     Y::Float64
@@ -24,17 +26,17 @@ struct Element
     Section
 end
 
-struct CLoad
+struct CLoad <: Load
     value::Float64
     distance::Float64
 end
 
-struct MLoad
+struct MLoad <: Load
     value::Float64
     distance::Float64
 end
 
-struct NLoad{T <: Tuple{Vararg{AbstractFloat}}}
+struct NLoad{T <: Tuple{Vararg{AbstractFloat}}} <: Load
     loads::T
 end
 
@@ -56,7 +58,7 @@ end
 
 
 
-struct DLoad
+struct DLoad <: Load
     value1::Float64
     value2::Float64
     distance1::Float64
@@ -64,12 +66,12 @@ struct DLoad
 end
 
 
-struct ALoad
+struct ALoad <: Load
     value::Float64
     distance::Float64
 end
 
-struct SurfaceShearLoad
+struct SurfaceShearLoad <: Load
     value::Float64
     distance1::Float64
     distance2::Float64
@@ -82,24 +84,33 @@ function T(Xb, Yb, Xe, Ye)
     _cos = δx/L
     _sin = δy/L
 
-    [_cos _sin 0 0
-     -_sin _cos 0 0
-     0 0 _cos _sin
-     0 0 -_sin _cos]
+    [_cos _sin 0 0 0 0
+     -_sin _cos 0 0 0 0
+     0 0 1 0 0 0
+     0 0 0 _cos _sin 0
+     0 0 0 -_sin _cos 0
+     0 0 0 0 0 1]
 end
+
+Symmetric([1 2 3
+          0 4 5
+          0 0 6])
 
 function k(Xb, Yb, Xe, Ye, A, E, I)
     δx = Xe - Xb
     δy = Ye - Yb
     L = sqrt(δx^2 + δy^2)
+    _cos = δx/L
+    _sin = δy/L
 
     (E*I/L^3)*
-    [A*L^2/I 0 0 -A*L^2/I 0 0
-     0 12 6L 0 -12 6L
-     0 6L 4L^2 0 -6L 2L^2
-     -A*L^2/I 0 0 A*L^2/I 0 0
-     0 -12 -6L 0 12 -6L
-     0 6L 2L^2 0 -6L 4L^2]
+    Symmetrix(
+     [((A*L^2/I)*_cos^2 + 12*_sin^2) (A*L^2/I - 12)*_cos*_sin -6*L*_sin -((A*L^2/I)*_cos^2 + 12*_sin^2) -(A*L^2/I - 12)*_cos*_sin -6*L*_sin
+     0. ((A*L^2/I)*_sin^2 + 12*_cos^2) 6*L*_cos -(A*L^2/I - 12)*_cos*_sin 6*L*_cos
+     0. 0. 4L^2 6L*_sin -6L*_cos 2L^2
+     0. 0. 0. ((A*L^2/I)*_cos^2 + 12*_sin^2) (A*L^2/I - 12)*_cos*_sin 6L*_sin
+     0. 0. 0. 0. ((A*L^2/I)*_sin^2 + 12*_cos^2) -6L*_cos
+     0. 0. 0. 0. 0. 4*L^2])
 end
 
 function Qf(Xb, Yb, Xe, Ye, cLoad::CLoad)
@@ -110,12 +121,14 @@ function Qf(Xb, Yb, Xe, Ye, cLoad::CLoad)
     l₁ = cLoad.distance
     l₂ = L - cLoad.distance
 
+    FAb = 0.0
     FSb = (W*l₂^2/L^3)*(3l₁ + l₂)
     FMb = (W*l₁*l₂^2/L^2)
+    FAe = 0.0
     FSe = (W*l₁^2/L^3)*(l₁ + 3l₂)
     FMe = (-W*l₁^2*l₂/L^2)
 
-    [FSb; FMb; FSe; FMe]
+    [FAb; FSb; FMb; FAe; FSe; FMe]
 end
 
 function Qf(Xb, Yb, Xe, Ye, dLoad::DLoad)
@@ -129,7 +142,7 @@ function Qf(Xb, Yb, Xe, Ye, dLoad::DLoad)
 
     isUniform = w₁ == w₂
 
-    FSb, FMb, FSe, FMe, = (0., 0., 0., 0.)
+    FAb, FSb, FMb, FAe, FSe, FMe, = (0., 0., 0., 0., 0., 0.)
 
     if isUniform
         w = w₁
@@ -155,24 +168,85 @@ function Qf(Xb, Yb, Xe, Ye, dLoad::DLoad)
                + FSb*L - FMb
 
     end
-    [FSb; FMb; FSe; FMe]
+    [FAb; FSb; FMb; FAe; FSe; FMe]
 end
 
-function Qf(Xb, Yb, Xe, Ye, loads::Array{CLoad,1})
-    sum(map(load -> Qf(Xb, Yb, Xe, Ye, load), loads))
+function Qf(Xb, Yb, Xe, Ye, aLoad::Aload)
+    δx = Xe - Xb
+    δy = Ye - Yb
+    L = sqrt(δx^2 + δy^2)
+    l₁ = aLoad.distance1
+    l₂ = L - l₁
+
+    FAb = W*l₂/L
+    FAe = W*l₁/L
+
+    [FAb; 0.; 0.; FAe; 0.; 0.]
 end
 
-function Qf(Xb, Yb, Xe, Ye, loads::Array{DLoad,1})
+function Qf(Xb, Yb, Xe, Ye, mLoad:MLoad)
+    δx = Xe - Xb
+    δy = Ye - Yb
+    L = sqrt(δx^2 + δy^2)
+    l₁ = mLoad.distance1
+    l₂ = L - l₁
+    FSb = -(6*mLoad.Load*l₁*l₂)/L^3
+    FMb = (mLoad.Load*l₂/L^2)*(l₂ - 2l₁)
+    FSe = -FSb
+    FMe = (mLoad.Load*l₁/L^2)*(l₁ - 2l₂)
+    [0.; FSb; FMb; 0; .FSe; FMe]
+end
+
+function Qf(Xb, Yb, Xe, Ye, surfaceShearLoad::SurfaceShearLoad)
+    δx = Xe - Xb
+    δy = Ye - Yb
+    L = sqrt(δx^2 + δy^2)
+    l₁ = surfaceShearLoad.Distance1
+    l₂ = L - surfaceShearLoad.Distance2
+
+    FAb = (w/2L)*(L-l₁-l₂)*(L-l₁+l₂)
+    FAe = (w/2L)*(L-l₁-l₂)*(L+l₁-l₂)
+
+    [FAb;0.;0.;FAe;0.;0.]
+
+end
+
+function Qf(Xb, Yb, Xe, Ye, loads::Array{Load,1})
     sum(map(load -> Qf(Xb, Yb, Xe, Ye, load), loads))
 end
 
 function Qf(Xb, Yb, Xe, Ye, loads::Array{Any,1})
     if size(loads, 1) == 0
-        return [0.0; 0.0; 0.0; 0.0]
+        return [0.0; 0.0; 0.0; 0.0; 0.0; 0.0]
     else
         sum(map(load -> Qf(Xb, Yb, Xe, Ye, load), loads))
     end
 end
+
+function Ff(Xb, Yb, Xe, Ye, Qf)
+    FAb, FSb, FMb, FAe, FSe, FMe = Qf
+    δx = Xe - Xb
+    δy = Ye - Yb
+    L = sqrt(δx^2 + δy^2)
+    _cos = δx/L
+    _sin = δy/L
+
+    [FAb*_cos - FSb*_sin
+     FAb*_sin + FSb*_cos
+     FMb
+     FAe*_cos - FSe*_sin
+     FAe*_sin + FSe*_cos
+     FMe]
+end
+
+
+
+#=
+function Ff(Array{Load,1})
+
+end
+=#
+
 
 function nsc(COORD, MSUP, NCJT)
     #Determine number of joints (NJ)

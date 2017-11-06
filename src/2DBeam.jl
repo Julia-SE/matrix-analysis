@@ -9,8 +9,6 @@ struct Support{T <: Tuple{Vararg{Int}}}
 end
 
 
-
-
 struct Material
     E::Float64
 end
